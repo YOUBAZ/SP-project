@@ -1,0 +1,21 @@
+* text=auto
+
+# Source/project files
+*.cpp text
+*.h text
+*.hpp text
+*.vcxproj text eol=crlf
+*.filters text eol=crlf
+*.sln text eol=crlf
+*.slnx text eol=crlf
+*.txt text
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.mp3 binary
+*.wav binary
+*.ttf binary
+*.otf binary
+*.ico binary

@@ -1,0 +1,4 @@
+# id|name|email|imageNumber|friendIds|barColor|signedIn|extraFields...
+1|Alice|alice@gmail.com|2||1|0
+2|abdo\\|bob@gmail.com|1||3|0
+3|abdo|podyayman86@gmail.com|2||1|1
