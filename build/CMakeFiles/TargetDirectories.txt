@@ -1,0 +1,3 @@
+D:/Trento Game (First CV project/SP-project/build/CMakeFiles/SP-PROJECT.dir
+D:/Trento Game (First CV project/SP-project/build/CMakeFiles/edit_cache.dir
+D:/Trento Game (First CV project/SP-project/build/CMakeFiles/rebuild_cache.dir

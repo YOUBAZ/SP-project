@@ -293,19 +293,116 @@ static int findUserIndexByEmail(const vector<UserRecord>& users, const string& e
     return -1;
 }
 
-// Safe texture loading (checks current and parent folders)
+static std::filesystem::path getAssetDirectory()
+{
+    static const std::filesystem::path assetDir = []()
+        {
+            std::vector<std::filesystem::path> searchRoots = { std::filesystem::current_path() };
+
+            std::error_code ec;
+            const auto sourcePath = std::filesystem::weakly_canonical(std::filesystem::path(__FILE__), ec);
+            if (!ec)
+                searchRoots.push_back(sourcePath.parent_path());
+
+            for (const auto& root : searchRoots)
+            {
+                auto current = root;
+                while (!current.empty())
+                {
+                    const auto candidate = current.filename() == "mygame" ? current : current / "mygame";
+                    if (std::filesystem::exists(candidate / "Player.png") && std::filesystem::exists(candidate / "Star_Crush.ttf"))
+                        return std::filesystem::absolute(candidate);
+
+                    const auto parent = current.parent_path();
+                    if (parent == current)
+                        break;
+                    current = parent;
+                }
+            }
+
+            return std::filesystem::absolute(std::filesystem::path("mygame"));
+        }();
+
+    return assetDir;
+}
+
+static std::filesystem::path getAssetPath(const std::filesystem::path& filePath)
+{
+    if (filePath.is_absolute())
+        return filePath;
+    return getAssetDirectory() / filePath;
+}
+
 bool loadTextureSafe(sf::Texture& texture, const std::string& fileName)
 {
-    const std::filesystem::path candidates[] = { fileName, std::filesystem::path("..") / fileName, std::filesystem::path("..") / ".." / fileName };
-    for (const auto& path : candidates)
+    const auto path = getAssetPath(fileName);
+    if (texture.loadFromFile(path.string()))
     {
-        if (texture.loadFromFile(path.string()))
-        {
-            texture.setRepeated(false);
-            return true;
-        }
+        texture.setRepeated(false);
+        return true;
     }
     return false;
+}
+
+bool openFontSafe(sf::Font& font, const std::string& fileName)
+{
+    return font.openFromFile(getAssetPath(fileName).string());
+}
+
+bool loadSoundBufferSafe(sf::SoundBuffer& buffer, const std::string& fileName)
+{
+    return buffer.loadFromFile(getAssetPath(fileName).string());
+}
+
+bool openMusicSafe(sf::Music& music, const std::string& fileName)
+{
+    return music.openFromFile(getAssetPath(fileName).string());
+}
+
+constexpr float VIRTUAL_SCREEN_WIDTH = 1920.f;
+constexpr float VIRTUAL_SCREEN_HEIGHT = 1080.f;
+
+static void applyLetterboxViewport(sf::View& view, sf::Vector2u windowSize)
+{
+    if (windowSize.x == 0 || windowSize.y == 0)
+        return;
+
+    const sf::Vector2f viewSize = view.getSize();
+    if (viewSize.x <= 0.f || viewSize.y <= 0.f)
+        return;
+
+    const float windowRatio = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
+    const float viewRatio = viewSize.x / viewSize.y;
+
+    float sizeX = 1.f, sizeY = 1.f;
+    float posX = 0.f, posY = 0.f;
+
+    if (windowRatio > viewRatio)
+    {
+        sizeX = viewRatio / windowRatio;
+        posX = (1.f - sizeX) * 0.5f;
+    }
+    else if (windowRatio < viewRatio)
+    {
+        sizeY = windowRatio / viewRatio;
+        posY = (1.f - sizeY) * 0.5f;
+    }
+
+    view.setViewport(sf::FloatRect({ posX, posY }, { sizeX, sizeY }));
+}
+
+static sf::View makeVirtualScreenView(const sf::RenderWindow& window)
+{
+    sf::View view;
+    view.setCenter({ VIRTUAL_SCREEN_WIDTH * 0.5f, VIRTUAL_SCREEN_HEIGHT * 0.5f });
+    view.setSize({ VIRTUAL_SCREEN_WIDTH, VIRTUAL_SCREEN_HEIGHT });
+    applyLetterboxViewport(view, window.getSize());
+    return view;
+}
+
+static sf::Vector2f mapPixelToVirtualScreen(const sf::RenderWindow& window, sf::Vector2i pixel)
+{
+    return window.mapPixelToCoords(pixel, makeVirtualScreenView(window));
 }
 
 // ====================================================================================
@@ -1008,7 +1105,7 @@ namespace ZombieMode
     }
     void drawProgressBar(sf::RenderWindow& window, float percentage)
     {
-        float barWidth = 775.f, barStartX = (1920.f - barWidth) / 2.f;
+        float barWidth = 775.f, barStartX = (VIRTUAL_SCREEN_WIDTH - barWidth) / 2.f;
         sf::RectangleShape bg({ barWidth, 30.f });
         bg.setFillColor(sf::Color::Cyan);
         bg.setPosition({ barStartX, 20.f });
@@ -1032,7 +1129,7 @@ namespace ZombieMode
         initPlayer(player);
         initGuns();
         camera.setSize({ 1280.f, 720.f });
-        font.openFromFile("Star_Crush.ttf");
+        openFontSafe(font, "Star_Crush.ttf");
         LEVELText.setCharacterSize(32);
         LEVELText.setFillColor(sf::Color::White);
         scoreText.setCharacterSize(32);
@@ -1093,6 +1190,7 @@ namespace ZombieMode
                 spawner.interval = std::max(1.0f, spawner.interval - 0.5f * kills.brute_killed);
 
             camera.setCenter(player.shape->getPosition());
+            applyLetterboxViewport(camera, window.getSize());
             updatePlayerMovement(player, enemies);
             updatePlayerRotation(window, player, camera);
             int pCol = static_cast<int>(player.shape->getPosition().x / TILE_SIZE), pRow = static_cast<int>(player.shape->getPosition().y / TILE_SIZE);
@@ -1160,11 +1258,11 @@ namespace ZombieMode
             window.setView(camera);
             drawMap(window);
             drawEntities(window, bullets, enemies, player);
-            window.setView(window.getDefaultView());
+            window.setView(makeVirtualScreenView(window));
             LEVELText.setString("LV: " + std::to_string(player.current_level));
-            LEVELText.setPosition({ (1920.f - 775.f) / 2.f, 60.f });
+            LEVELText.setPosition({ (VIRTUAL_SCREEN_WIDTH - 775.f) / 2.f, 60.f });
             scoreText.setString("SCORE: " + std::to_string(kills.walker_killed + kills.crawler_killed * 3 + kills.brute_killed * 10));
-            scoreText.setPosition({ (1920.f - 775.f) / 2.f + 775.f - 120.f, 60.f });
+            scoreText.setPosition({ (VIRTUAL_SCREEN_WIDTH - 775.f) / 2.f + 775.f - 120.f, 60.f });
             drawProgressBar(window, (float)remaining / pointsNeeded);
             window.draw(LEVELText);
             window.draw(scoreText);
@@ -1179,7 +1277,7 @@ namespace ZombieMode
             window.draw(timeText);
             window.display();
         }
-        window.setView(window.getDefaultView());
+        window.setView(makeVirtualScreenView(window));
     }
 } // end ZombieMode
 
@@ -2844,7 +2942,7 @@ namespace BossMode
         const std::array<const char*, 2> fontCandidates = { "Star_Crush.ttf", "arial.ttf" };
         for (const char* path : fontCandidates)
         {
-            if (hud.font.openFromFile(path))
+            if (openFontSafe(hud.font, path))
             {
                 hud.hasFont = true;
                 break;
@@ -2898,7 +2996,7 @@ namespace BossMode
         if (frame.dt > 0.05f)
             frame.dt = 0.05f;
         frame.mousePixel = sf::Mouse::getPosition(game.window);
-        frame.mouseWorld = { static_cast<float>(frame.mousePixel.x), static_cast<float>(frame.mousePixel.y) };
+        frame.mouseWorld = mapPixelToVirtualScreen(game.window, frame.mousePixel);
         return frame;
     }
 
@@ -2965,7 +3063,7 @@ namespace BossMode
     CharacterType chooseBossCharacter(sf::RenderWindow& window, int& menucounter)
     {
         sf::Font font;
-        if (!font.openFromFile("Pixelmax-Regular.otf") && !font.openFromFile("arial.ttf"))
+        if (!openFontSafe(font, "Pixelmax-Regular.otf") && !openFontSafe(font, "arial.ttf"))
             return CharacterType::WIZARD;
 
         const std::array<CharacterType, 5> types = {
@@ -3041,6 +3139,7 @@ namespace BossMode
                 optionText[i].setFillColor(i == selectedIndex ? sf::Color::Cyan : sf::Color::White);
 
             window.clear(sf::Color(30, 30, 35));
+            window.setView(makeVirtualScreenView(window));
             window.draw(title);
             for (int i = 0; i < 5; ++i)
                 window.draw(optionText[i]);
@@ -3226,6 +3325,7 @@ namespace BossMode
             }
 
             window.clear(sf::Color(30, 30, 35));
+            window.setView(makeVirtualScreenView(window));
             for (const auto& tile : game.scene.floorTiles)
                 window.draw(tile);
             window.draw(game.scene.arenaBorder);
@@ -3583,7 +3683,7 @@ namespace OnlineMode
                 charName = "Ice Man";
                 break;
             }
-            if (!texture.loadFromFile(texturePath))
+            if (!texture.loadFromFile(getAssetPath(texturePath).string()))
                 return false;
             int row = 0;
             switch (t)
@@ -3865,7 +3965,7 @@ namespace OnlineMode
         constexpr int COUNT = 5;
         const float btnW = 270.f, btnH = 360.f, gap = 25.f;
         const float totalW = COUNT * btnW + (COUNT - 1) * gap;
-        const float startX = (window.getSize().x - totalW) / 2.f, startY = 200.f;
+        const float startX = (VIRTUAL_SCREEN_WIDTH - totalW) / 2.f, startY = 200.f;
         const char* names[] = { "Cheese Man", "Bazooka Man", "The Detective", "The Wizard", "Ice Man" };
         const char* descs[] = { "[RMB] Cheese Gun  — Sticks enemy", "[RMB] Bazooka     — Explosion", "[RMB] Revolver    — Pierces walls", "[RMB] Magic Bolt  — Confuses enemy", "[RMB] Ice Shard   — Slows enemy" };
         bool chosen = false;
@@ -3882,7 +3982,7 @@ namespace OnlineMode
                 {
                     if (mb->button == sf::Mouse::Button::Left)
                     {
-                        sf::Vector2f mp((float)mb->position.x, (float)mb->position.y);
+                        sf::Vector2f mp = mapPixelToVirtualScreen(window, mb->position);
                         for (int i = 0; i < COUNT; i++)
                         {
                             sf::FloatRect btn({ startX + i * (btnW + gap), startY }, { btnW, btnH });
@@ -3898,6 +3998,7 @@ namespace OnlineMode
                 }
             }
             window.clear(sf::Color(20, 20, 30));
+            window.setView(makeVirtualScreenView(window));
             sf::Text title(state.font, "Choose Your Character", 52);
             title.setFillColor(sf::Color::White);
             title.setPosition({ startX, 90.f });
@@ -3944,7 +4045,7 @@ namespace OnlineMode
                 {
                     if (mb->button == sf::Mouse::Button::Left)
                     {
-                        sf::Vector2f mp((float)mb->position.x, (float)mb->position.y);
+                        sf::Vector2f mp = mapPixelToVirtualScreen(window, mb->position);
                         if (redBtn.getGlobalBounds().contains(mp))
                             state.myTeam = 1;
                         if (blueBtn.getGlobalBounds().contains(mp))
@@ -3953,6 +4054,7 @@ namespace OnlineMode
                 }
             }
             window.clear(sf::Color(30, 30, 30));
+            window.setView(makeVirtualScreenView(window));
             window.draw(redBtn);
             window.draw(blueBtn);
             window.draw(txt);
@@ -4227,7 +4329,7 @@ namespace OnlineMode
                 np.charType = static_cast<CharacterType>(charTypeInt);
                 if (!np.textureLoaded)
                 {
-                    if (np.texture.loadFromFile("characters.png"))
+                    if (loadTextureSafe(np.texture, "characters.png"))
                     {
                         int row = 0;
                         switch (np.charType)
@@ -4338,6 +4440,7 @@ namespace OnlineMode
 
     void updatePlayerState(GameState& state, sf::RenderWindow& window, float dt)
     {
+        applyLetterboxViewport(state.camera, window.getSize());
         sf::Vector2f dir(0.f, 0.f);
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W))
             dir.y -= 1.f;
@@ -4441,6 +4544,7 @@ namespace OnlineMode
     void renderFrame(sf::RenderWindow& window, GameState& state)
     {
         window.clear(sf::Color(30, 30, 30));
+        applyLetterboxViewport(state.camera, window.getSize());
         window.setView(state.camera);
 
         // 1. Draw Map (Floor and Walls) first
@@ -4545,14 +4649,14 @@ namespace OnlineMode
         pfg.setPosition(pbg.getPosition());
         window.draw(pbg);
         window.draw(pfg);
-        window.setView(window.getDefaultView());
+        window.setView(makeVirtualScreenView(window));
         sf::Text scoreT(state.font, (state.isCaptureMode ? "RED BASES: " : "RED SCORE: ") + to_string(state.redScore) + (state.isCaptureMode ? "   |   BLUE BASES: " : "   |   BLUE SCORE: ") + to_string(state.blueScore), 40);
-        scoreT.setPosition({ window.getSize().x / 2.f - 200.f, 20.f });
+        scoreT.setPosition({ VIRTUAL_SCREEN_WIDTH / 2.f - 200.f, 20.f });
         scoreT.setFillColor(sf::Color::White);
         window.draw(scoreT);
         if (state.winningTeam != 0)
         {
-            sf::RectangleShape overlay(sf::Vector2f((float)window.getSize().x, (float)window.getSize().y));
+            sf::RectangleShape overlay({ VIRTUAL_SCREEN_WIDTH, VIRTUAL_SCREEN_HEIGHT });
             overlay.setFillColor(sf::Color(0, 0, 0, 180));
             window.draw(overlay);
             string winMsg = (state.winningTeam == 1) ? "RED TEAM WINS!" : "BLUE TEAM WINS!";
@@ -4560,7 +4664,7 @@ namespace OnlineMode
             winText.setFillColor(state.winningTeam == 1 ? sf::Color::Red : sf::Color::Blue);
             sf::FloatRect textRect = winText.getLocalBounds();
             winText.setOrigin({ textRect.position.x + textRect.size.x / 2.0f, textRect.position.y + textRect.size.y / 2.0f });
-            winText.setPosition({ window.getSize().x / 2.0f, window.getSize().y / 2.0f });
+            winText.setPosition({ VIRTUAL_SCREEN_WIDTH / 2.0f, VIRTUAL_SCREEN_HEIGHT / 2.0f });
             window.draw(winText);
         }
         window.display();
@@ -4573,7 +4677,7 @@ namespace OnlineMode
         initGuns(state);
         if (!loadMapTextures())
             cout << "Warning: Map textures missing." << endl;
-        if (!state.font.openFromFile("Star_Crush.ttf") && !state.font.openFromFile("arial.ttf"))
+        if (!openFontSafe(state.font, "Star_Crush.ttf") && !openFontSafe(state.font, "arial.ttf"))
             cout << "Warning: Font missing." << endl;
         sf::TcpSocket tcpSocket;
         sf::UdpSocket udpSocket;
@@ -4674,7 +4778,7 @@ int getClickedItem(std::vector<sf::Text>& menu, Vector2f mousePos)
 
 void draw_menu(RenderWindow& window, std::vector<sf::Text>& menu, int& selected)
 {
-    Vector2f mousePos = window.mapPixelToCoords(Mouse::getPosition(window));
+    Vector2f mousePos = mapPixelToVirtualScreen(window, Mouse::getPosition(window));
     bool is_any_hovered = false;
     for (size_t i = 0; i < menu.size(); i++)
     {
@@ -4743,7 +4847,7 @@ void setupSprites_size(RectangleShape sprites[5][2], float size)
 }
 void draw_photos(RenderWindow& window, RectangleShape sprite[5][2], UserRecord& u, int& chosen_photo_z, int& chosen_photo_i)
 {
-    Vector2f mousePos = window.mapPixelToCoords(Mouse::getPosition(window));
+    Vector2f mousePos = mapPixelToVirtualScreen(window, Mouse::getPosition(window));
     for (int i = 0; i < 2; i++)
     {
         for (int z = 0; z < 5; z++)
@@ -4793,7 +4897,7 @@ void setup_background_color(RectangleShape sprite[5], Texture texture[5])
 }
 void draw_background_colors(RenderWindow& window, RectangleShape background_color_profile_sprite[5], UserRecord& u, int& chosen_background_color_i)
 {
-    Vector2f mousePos = window.mapPixelToCoords(Mouse::getPosition(window));
+    Vector2f mousePos = mapPixelToVirtualScreen(window, Mouse::getPosition(window));
     for (int i = 0; i < 5; i++)
     {
         if (background_color_profile_sprite[i].getGlobalBounds().contains(mousePos))
@@ -4822,8 +4926,10 @@ void draw_background_colors_outside(RenderWindow& window, RectangleShape sprite[
 
 int main()
 {
-    RenderWindow window(VideoMode({ 1920, 1080 }), "Istanbul Cheese");
-    window.setFramerateLimit(60);
+    sf::VideoMode desktop = sf::VideoMode::getDesktopMode();
+    RenderWindow window(desktop, "Istanbul Cheese", sf::State::Fullscreen);
+    window.setFramerateLimit(144);
+    window.setView(makeVirtualScreenView(window));
 
     if (!ZombieMode::loadZombieTextures())
         std::cout << "Warning: Could not load some zombie textures.\n";
@@ -4855,8 +4961,8 @@ int main()
     }
 
     Font text, text2;
-    text.openFromFile("Pixelmax-Regular.otf");
-    text2.openFromFile("PixelCaps!.otf");
+    openFontSafe(text, "Pixelmax-Regular.otf");
+    openFontSafe(text2, "PixelCaps!.otf");
     int menucounter = user.signedIn ? 0 : 26, selected = -1, back = -1, chosen_photo_z = -1, chosen_photo_i = -1, chosen_background_color_i = 0, music_played_now = 0, music_played_last = -1;
 
     std::vector<sf::Text> main_menu_text, pause_menu_text, settings_text, gametypetext, onlinegamestext, offlinegamestext, PvP, PvE, musictext, sound_effects_text, game_profile_text, gender_text, info_text, sign_in_text, sign_or_log_txt;
@@ -4975,7 +5081,7 @@ int main()
 
     float music_volume = 20.f, sound_effects_volume = 50.f;
     SoundBuffer sfxbmenu;
-    sfxbmenu.loadFromFile("sfxmenu.MP3");
+    loadSoundBufferSafe(sfxbmenu, "sfxmenu.MP3");
     Sound sfxmenu(sfxbmenu);
     Music music;
     music.setVolume(music_volume);
@@ -5101,7 +5207,7 @@ int main()
             {
                 if (mouseBtn->button == sf::Mouse::Button::Left)
                 {
-                    Vector2f mouseClickPos = window.mapPixelToCoords(mouseBtn->position);
+                    Vector2f mouseClickPos = mapPixelToVirtualScreen(window, mouseBtn->position);
                     if (!ispaused)
                     {
                         if (menucounter == 9)
@@ -5568,12 +5674,13 @@ int main()
         {
             music.stop();
             if (music_played_now == 0)
-                music.openFromFile("musicmenu.mp3");
+                openMusicSafe(music, "musicmenu.mp3");
             music.setLooping(true);
             music.play();
             music_played_last = music_played_now;
         }
 
+        window.setView(makeVirtualScreenView(window));
         window.clear();
         window.draw(background_sprite);
         if (!ispaused)
@@ -5660,7 +5767,7 @@ int main()
                 break;
             case 9:
                 window.draw(enter_username_indicator_text);
-                box.setOutlineColor(box.getGlobalBounds().contains(window.mapPixelToCoords(Mouse::getPosition(window))) ? Color::Yellow : Color::White);
+                box.setOutlineColor(box.getGlobalBounds().contains(mapPixelToVirtualScreen(window, Mouse::getPosition(window))) ? Color::Yellow : Color::White);
                 draw_background_colors_outside(window, background_color_profile_sprite, chosen_background_color_i);
                 window.draw(box);
                 window.draw(usernametext);
@@ -5707,7 +5814,7 @@ int main()
                 break;
             case 24:
                 window.draw(enter_gmail_indicator_text);
-                boxg.setOutlineColor(boxg.getGlobalBounds().contains(window.mapPixelToCoords(Mouse::getPosition(window))) ? Color::Yellow : Color::White);
+                boxg.setOutlineColor(boxg.getGlobalBounds().contains(mapPixelToVirtualScreen(window, Mouse::getPosition(window))) ? Color::Yellow : Color::White);
                 window.draw(boxg);
                 window.draw(usergmailtext);
                 break;
