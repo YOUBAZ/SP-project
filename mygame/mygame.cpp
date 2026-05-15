@@ -32,6 +32,7 @@ const unsigned short SERVER_PORT = 53000;
 // ====================================================================================
 // ================================== FILE STREAM =====================================
 // ====================================================================================
+// User record structure for storing user data
 
 struct UserRecord
 {
@@ -46,6 +47,8 @@ struct UserRecord
     bool gender;
 };
 
+// Helper functions for parsing and formatting user records
+
 static string trimCopy(const string& text)
 {
     const auto first = find_if_not(text.begin(), text.end(), [](unsigned char ch)
@@ -57,6 +60,7 @@ static string trimCopy(const string& text)
         return {};
     return string(first, last);
 }
+// Escape special characters in a field for saving to file
 
 static string escapeField(const string& value)
 {
@@ -88,6 +92,7 @@ static string escapeField(const string& value)
     }
     return out;
 }
+// Split a line into fields, handling escaped delimiters and special characters
 
 static vector<string> splitEscaped(const string& line, char delimiter = '|')
 {
@@ -136,6 +141,7 @@ static vector<string> splitEscaped(const string& line, char delimiter = '|')
     fields.push_back(current);
     return fields;
 }
+// Parse an integer from a string, ensuring the entire string is consumed
 
 static bool parseInt(const string& text, int& value)
 {
@@ -153,6 +159,7 @@ static bool parseInt(const string& text, int& value)
         return false;
     }
 }
+// Parse a comma-separated list of friend IDs into a vector of integers
 
 static bool parseFriendIds(const string& text, vector<int>& friendIds)
 {
@@ -180,6 +187,7 @@ static bool parseFriendIds(const string& text, vector<int>& friendIds)
     }
     return true;
 }
+// Join a list of friend IDs into a comma-separated string for saving to file
 
 static string joinFriendIds(const vector<int>& friendIds)
 {
@@ -192,6 +200,7 @@ static string joinFriendIds(const vector<int>& friendIds)
     }
     return out;
 }
+// Find a user by ID in the users vector
 
 const UserRecord* findUserById(const vector<UserRecord>& users, int id)
 {
@@ -202,6 +211,7 @@ const UserRecord* findUserById(const vector<UserRecord>& users, int id)
 }
 
 // Load users database
+
 bool loadUsers(const string& filePath, vector<UserRecord>& users, string* errorMessage = nullptr)
 {
     users.clear();
@@ -256,6 +266,7 @@ bool loadUsers(const string& filePath, vector<UserRecord>& users, string* errorM
 }
 
 // Save users database
+
 bool saveUsers(const string& filePath, const vector<UserRecord>& users, string* errorMessage = nullptr)
 {
     ofstream out(filePath, ios::trunc);
@@ -276,6 +287,7 @@ bool saveUsers(const string& filePath, const vector<UserRecord>& users, string* 
     }
     return true;
 }
+// Get the next available user ID by finding the maximum existing ID and adding 1
 
 int nextUserId(const vector<UserRecord>& users)
 {
@@ -4865,7 +4877,7 @@ void draw_photos(RenderWindow& window, RectangleShape sprite[5][2], UserRecord& 
     if (chosen_photo_z >= 0 && chosen_photo_i >= 0)
     {
         Vector2f original_pos = sprite[chosen_photo_z][chosen_photo_i].getPosition();
-        sprite[chosen_photo_z][chosen_photo_i].setPosition({ 720.f, 200.f });
+        sprite[chosen_photo_z][chosen_photo_i].setPosition({ 520.f, 375.f });
         sprite[chosen_photo_z][chosen_photo_i].setScale({ 2.f, 2.f });
         sprite[chosen_photo_z][chosen_photo_i].setFillColor(Color::White);
         window.draw(sprite[chosen_photo_z][chosen_photo_i]);
@@ -4975,7 +4987,7 @@ int main()
     setupMenu(settings_text, { "music", "sound effects", "game profile", "info", "sign", "back" }, &text);
     setupMenu(gametypetext, { "online", "offline", "back" }, &text);
     setupMenu(onlinegamestext, { "PVP", "PVE", "back" }, &text);
-    setupMenu(PvP, { "Team deathmatch", "Capture the flag", "back" }, &text);
+    setupMenu(PvP, { "free for all", "Team deathmatch", "Capture the flag", "back" }, &text);
     setupMenu(PvE, { "Bossfight", "Zombie survival", "back" }, &text);
     setupMenu(offlinegamestext, { "Bossfight", "Zombie survival", "back" }, &text);
     setupMenu(musictext, { "increase", "decrease", "back" }, &text);
@@ -5076,6 +5088,7 @@ int main()
     RectangleShape profile_userimage_sprite({ 234, 234 });
     profile_userimage_sprite.setTexture(&profile_userimage_tex);
     profile_userimage_sprite.setPosition({ 1640.f, 640.f });
+
     profile_userimage_sprite.setOrigin({ 117, 117 });
     profile_userimage_sprite.setScale({ 1.3f, 1.3f });
 
@@ -5509,17 +5522,22 @@ int main()
                         case 16:
                         {
                             int clicked = getClickedItem(PvP, mouseClickPos);
-                            if (clicked == 0)
+							if (clicked == 0)
+							{
+								menucounter = 17;
+                                sfxmenu.play();
+							}
+                            else if (clicked == 1)
                             {
                                 menucounter = 17;
                                 sfxmenu.play();
                             }
-                            else if (clicked == 1)
+                            else if (clicked == 2)
                             {
                                 menucounter = 18;
                                 sfxmenu.play();
                             }
-                            else if (clicked == 2)
+                            else if (clicked == 3)
                             {
                                 menucounter = 5;
                                 sfxmenu.play();
@@ -5774,11 +5792,23 @@ int main()
                 break;
             case 10:
                 window.draw(choose_photo_indicator_text);
+               
                 draw_photos(window, boys_profile_sprite, user, chosen_photo_z, chosen_photo_i);
+                if (!is_profile_selected) {
+                    profile_userimage_sprite.setPosition({ 520.f, 375.f });
+                    profile_userimage_sprite.setScale({ 1.7f, 1.7f });
+                    window.draw(profile_userimage_sprite);
+                }
                 break;
             case 11:
                 window.draw(choose_photo_indicator_text);
+               
                 draw_photos(window, girls_profile_sprite, user, chosen_photo_z, chosen_photo_i);
+                if (!is_profile_selected) {
+                    profile_userimage_sprite.setPosition({ 520.f, 375.f });
+                    profile_userimage_sprite.setScale({ 1.7f, 1.7f });
+                    window.draw(profile_userimage_sprite);
+                }
                 break;
             case 12:
                 draw_menu(window, info_text, selected);
@@ -5828,9 +5858,9 @@ int main()
                 window.draw(usernametext);
                 break;
             }
-            if (!is_profile_selected && menucounter != 10 && menucounter != 11 && menucounter != 24 && menucounter != 3 && menucounter != 4 && menucounter != 13 && menucounter != 14 && menucounter != 15 && menucounter != 17 && menucounter != 18 && menucounter != 20 && menucounter != 21)
+            if (!is_profile_selected && menucounter != 10 && menucounter != 11 && menucounter != 24 && menucounter != 3 && menucounter != 4 && menucounter != 13 && menucounter != 14 && menucounter != 15 && menucounter != 17 && menucounter != 18 && menucounter != 20 && menucounter != 21&& menucounter != 22)
                 window.draw(profile_userimage_sprite);
-            else if (menucounter != 10 && menucounter != 11 && menucounter != 24 && menucounter != 3 && menucounter != 4 && menucounter != 13 && menucounter != 14 && menucounter != 15 && menucounter != 17 && menucounter != 18 && menucounter != 20 && menucounter != 21)
+            else if (menucounter != 10 && menucounter != 11 && menucounter != 24 && menucounter != 3 && menucounter != 4 && menucounter != 13 && menucounter != 14 && menucounter != 15 && menucounter != 17 && menucounter != 18 && menucounter != 20 && menucounter != 21&& menucounter != 22)
                 draw_photos_outside(window, user.gender == 0 ? boys_profile_sprite : girls_profile_sprite, chosen_photo_z, chosen_photo_i);
         }
         else
